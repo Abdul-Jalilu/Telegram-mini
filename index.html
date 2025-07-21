@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src='//libtl.com/sdk.js' data-zone='9596591' data-sdk='show_9596591'></script>
+  <title>🎬 Movie App + Quiz Challenge</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #111;
+      color: #fff;
+      text-align: center;
+      padding: 20px;
+    }
+    input, select, textarea {
+      margin: 10px;
+      padding: 10px;
+      font-size: 16px;
+      border-radius: 5px;
+      border: none;
+    }
+    button {
+      margin: 10px;
+      padding: 10px 20px;
+      background: #ff3c3c;
+      border: none;
+      color: white;
+      font-size: 16px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    #movie-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-top: 20px;
+    }
+    .movie-card {
+      background: #222;
+      padding: 10px;
+      border-radius: 10px;
+    }
+    .movie-card img {
+      width: 100%;
+      border-radius: 5px;
+    }
+    .option-btn {
+      display: block;
+      margin: 10px auto;
+      width: 80%;
+    }
+    #score-list li {
+      margin: 5px 0;
+    }
+    #promo-banner {
+      background: linear-gradient(to right, #222, #333);
+      padding: 20px;
+      border-radius: 10px;
+      margin-top: 30px;
+    }
+    #promo-banner h2 {
+      margin-bottom: 10px;
+    }
+    #adminPanel {
+      margin-top: 30px;
+      padding: 20px;
+      background: #222;
+      border-radius: 10px;
+    }
+    #adminPanel textarea {
+      width: 80%;
+      padding: 10px;
+      font-size: 16px;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h1>🎬 Movie Explorer + Quiz Challenge</h1>
+
+    <input type="text" id="search" placeholder="Search movie title..." />
+    <select id="genre-select"><option value="">All Genres</option></select>
+    <button onclick="loadMovies()">🔄 Load Movies</button>
+
+    <div id="movie-grid"></div>
+
+    <hr>
+
+    <h2>🧠 Quiz of the Day</h2>
+    <button onclick="loadQuizOfTheDay()">Start Quiz</button>
+    <div id="quiz-container"></div>
+    <div id="leaderboard" style="display:none;">
+      <h2>🏆 Leaderboard</h2>
+      <ul id="score-list"></ul>
+    </div>
+
+    <hr>
+
+    <h2>🎯 Challenge a Friend</h2>
+    <input type="text" id="challenge-movie" placeholder="Enter movie title..." />
+    <input type="text" id="challenge-user" placeholder="Enter Telegram user ID..." />
+    <button onclick="sendChallenge()">Send Challenge</button>
+
+    <div id="promo-banner">
+      <h2>📣 Join Our Movie Community!</h2>
+      <p>Get daily quizzes, movie recommendations, and exclusive updates.</p>
+      <a href="https://t.me/+6YMikWo4851jYWM0" target="_blank">
+        <button>🚀 Join Our Telegram Channel</button>
+      </a>
+    </div>
+
+    <!-- Admin Panel -->
+    <div id="adminPanel" style="display: none;">
+      <h2>🛠️ Admin Panel</h2>
+      <textarea id="broadcastMessage" rows="4" placeholder="Enter broadcast message..."></textarea><br>
+      <button onclick="sendBroadcast()">📢 Send Broadcast</button>
+    </div>
+  </div>
+  <!-- Ad Splash Screen -->
+<div id="launch-ad" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+     background-color: #fff; z-index: 9999; display: flex; flex-direction: column;
+     justify-content: center; align-items: center;">
+  <img src="your-ad-image.jpg" alt="Ad" style="max-width: 90%; border-radius: 10px;">
+  <button onclick="hideLaunchAd()" style="margin-top: 20px;">Continue</button>
+</div>
+
+
+  <script>
+    Telegram.WebApp.ready();
+    const user = Telegram.WebApp.initDataUnsafe.user;
+    const botToken = "7607501903:AAG079fg4K5jY3kw70ie2FDqIT0Kaxm7K-w";
+    const tmdbKey = "3633b89cd5c59bab33c1e3a7f0615f42";
+    const adminId = "6058952520";
+    const adminUsername = "abdul_10000";
+
+    const genreSelect = document.getElementById('genre-select');
+    const searchInput = document.getElementById('search');
+    const movieGrid = document.getElementById('movie-grid');
+    const quizContainer = document.getElementById('quiz-container');
+    const scoreList = document.getElementById('score-list');
+    const leaderboard = document.getElementById('leaderboard');
+
+    let quizQuestions = [];
+    let currentQuestion = 0;
+    let scores = {};
+    let timer;
+    let timeLeft = 15;
+
+    const userId = user?.id;
+    const username = user?.username || "Unknown";
+    const firstName = user?.first_name || "";
+    const lastName = user?.last_name || "";
+    const fullName = `${firstName} ${lastName}`.trim();
+
+    // Send user info to bot
+    fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: adminId,
+        text: `New user opened the Web App:\nName: ${fullName}\nUsername: @${username}\nID: ${userId}`
+      })
+    });
+
+    // Show admin panel if user is admin
+    if (userId == adminId || username == adminUsername) {
+      document.getElementById("adminPanel").style.display = "block";
+    }
+
+    // Broadcast function (replace with actual user IDs)
+    function sendBroadcast() {
+      const message = document.getElementById("broadcastMessage").value;
+      const userIds = ["123456789", "987654321"]; // Replace with actual user IDs
+
+      userIds.forEach(id => {
+        fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: id,
+            text: `📢 Broadcast from Admin:\n${message}`
+          })
+        });
+      });
+
+      alert("Broadcast sent!");
+    }
+
+    async function fetchGenres() {
+      const res = await fetch(`https://api.themoviedb.org/3/genre/movie/list?api_key=${tmdbKey}`);
+      const data = await res.json();
+      data.genres.forEach(genre => {
+        const option = document.createElement('option');
+        option.value = genre.id;
+        option.textContent = genre.name;
+        genreSelect.appendChild(option);
+      });
+    }
+
+    async function loadMovies() {
+      const genre = genreSelect.value;
+      const query = searchInput.value;
+
+      let url = query
+        ? `https://api.themoviedb.org/3/search/movie?api_key=${tmdbKey}&query=${query}`
+        : `https://api.themoviedb.org/3/discover/movie?api_key=${tmdbKey}&sort_by=popularity.desc${genre ? `&with_genres=${genre}` : ''}`;
+
+      const res = await fetch(url);
+      const data = await res.json();
+      movieGrid.innerHTML = '';
+      data.results.slice(0, 12).forEach(movie => {
+        const card = document.createElement('div');
+        card.className = 'movie-card';
+        card.innerHTML = `
+          <img src="https://image.tmdb.org/t/p/w500${movie.poster_path}" alt="${movie.title}">
+          <h4>${movie.title}</h4>
+          <p>⭐ ${movie.vote_average}</p>
+        `;
+        movieGrid.appendChild(card);
+      });
+    }
+
+    async function loadQuizOfTheDay() {
+      const res = await fetch(`https://api.themoviedb.org/3/movie/popular?api_key=${tmdbKey}`);
+      const data = await res.json();
+      const movies = data.results.slice(0, 10);
+
+      quizQuestions = movies.map(movie => ({
+        question: `What is the rating of "${movie.title}"?`,
+        options: shuffle([
+          movie.vote_average.toFixed(1),
+          (movie.vote_average + 1).toFixed(1),
+          (movie.vote_average - 1).toFixed(1),
+          "5.0"
+        ]),
+        answer: movie.vote_average.toFixed(1)
+      }));
+
+      currentQuestion = 0;
+      scores = {};
+      renderQuestion();
+    }
+
+        function shuffle(arr) {
+      return arr.sort(() => Math.random() - 0.5);
+    }
+
+    function renderQuestion() {
+      const q = quizQuestions[currentQuestion];
+      quizContainer.innerHTML = `
+        <h3>Q${currentQuestion + 1}: ${q.question}</h3>
+        <div id="timer">⏱️ Time left: ${timeLeft}s</div>
+        ${q.options.map(opt => `<button class="option-btn">${opt}</button>`).join('')}
+      `;
+
+      document.querySelectorAll('.option-btn').forEach(btn => {
+        btn.onclick = () => handleAnswer(btn.textContent);
+      });
+
+      startTimer();
+    }
+
+    function startTimer() {
+      timeLeft = 15;
+      timer = setInterval(() => {
+        timeLeft--;
+        document.getElementById('timer').textContent = `⏱️ Time left: ${timeLeft}s`;
+        if (timeLeft <= 0) {
+          clearInterval(timer);
+          handleAnswer(null);
+        }
+      }, 1000);
+    }
+
+    function handleAnswer(selected) {
+      clearInterval(timer);
+      const correct = quizQuestions[currentQuestion].answer;
+      if (!scores[user.id]) scores[user.id] = { name: user.first_name, score: 0 };
+
+      if (selected === correct) scores[user.id].score += 1;
+
+      currentQuestion++;
+      if (currentQuestion < quizQuestions.length) {
+        renderQuestion();
+      } else {
+        showLeaderboard();
+        scheduleWinnerAnnouncement();
+      }
+    }
+
+    function showLeaderboard() {
+      quizContainer.style.display = 'none';
+      leaderboard.style.display = 'block';
+
+      scoreList.innerHTML = '';
+      Object.values(scores)
+        .sort((a, b) => b.score - a.score)
+        .forEach(entry => {
+          const li = document.createElement('li');
+          li.textContent = `${entry.name}: ${entry.score} pts`;
+          scoreList.appendChild(li);
+        });
+
+      triggerConfetti();
+    }
+
+    function triggerConfetti() {
+      const canvas = document.createElement('canvas');
+      canvas.style.position = 'fixed';
+      canvas.style.top = 0;
+      canvas.style.left = 0;
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
+      canvas.style.zIndex = 9999;
+      document.body.appendChild(canvas);
+
+      const confetti = window.confetti.create(canvas, { resize: true });
+      confetti({ particleCount: 200, spread: 70, origin: { y: 0.6 } });
+
+      setTimeout(() => canvas.remove(), 3000);
+    }
+
+    function scheduleWinnerAnnouncement() {
+      const now = new Date();
+      const target = new Date();
+      target.setHours(20, 0, 0, 0); // 8:00 PM
+
+      const delay = target - now;
+      if (delay > 0) {
+        setTimeout(() => announceWinners(), delay);
+      } else {
+        announceWinners(); // If already past 8:00 PM
+      }
+    }
+
+    function announceWinners() {
+      const winners = Object.values(scores).filter(u => u.score >= 8);
+      winners.forEach(winner => {
+        fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: user.id,
+            text: `🏆 Congrats ${winner.name}! You scored ${winner.score} in the Quiz of the Day! 🎉`
+          })
+        });
+      });
+    }
+
+    async function sendChallenge() {
+      const movieTitle = document.getElementById('challenge-movie').value.trim();
+      const targetUser = document.getElementById('challenge-user').value.trim();
+
+      if (!movieTitle || !targetUser) {
+        alert("Please enter both movie title and user to challenge.");
+        return;
+      }
+
+      const searchRes = await fetch(`https://api.themoviedb.org/3/search/movie?api_key=${tmdbKey}&query=${movieTitle}`);
+      const searchData = await searchRes.json();
+      const movie = searchData.results[0];
+      if (!movie) {
+        alert("Movie not found.");
+        return;
+      }
+
+      const movieId = movie.id;
+      const res = await fetch(`https://api.themoviedb.org/3/movie/${movieId}?api_key=${tmdbKey}&append_to_response=credits`);
+      const data = await res.json();
+
+      const director = data.credits.crew.find(c => c.job === "Director")?.name || "Unknown";
+      const leadActor = data.credits.cast[0]?.name || "Unknown";
+      const releaseYear = data.release_date?.split('-')[0] || "Unknown";
+      const genre = data.genres[0]?.name || "Unknown";
+
+      const challengeQuestions = [
+        {
+          question: `Who directed ${data.title}?`,
+          options: shuffle([director, "James Cameron", "Steven Spielberg", "Martin Scorsese"]),
+          answer: director
+        },
+        {
+          question: `Who played the lead role in ${data.title}?`,
+          options: shuffle([leadActor, "Tom Cruise", "Brad Pitt", "Leonardo DiCaprio"]),
+          answer: leadActor
+        },
+        {
+          question: `What year was ${data.title} released?`,
+          options: shuffle([releaseYear, "2005", "2015", "1999"]),
+          answer: releaseYear
+        },
+        {
+          question: `What genre best describes ${data.title}?`,
+          options: shuffle([genre, "Comedy", "Romance", "Documentary"]),
+          answer: genre
+        },
+        {
+          question: `Is "${data.title}" rated above 7?`,
+          options: ["Yes", "No"],
+          answer: data.vote_average > 7 ? "Yes" : "No"
+        },
+        {
+          question: `Was "${data.title}" released after 2010?`,
+          options: ["Yes", "No"],
+          answer: parseInt(releaseYear) > 2010 ? "Yes" : "No"
+        },
+        {
+          question: `Is "${data.title}" a ${genre} movie?`,
+          options: ["Yes", "No"],
+          answer: "Yes"
+        },
+        {
+          question: `Is the lead actor ${leadActor}?`,
+          options: ["Yes", "No"],
+          answer: "Yes"
+        },
+        {
+          question: `Was "${data.title}" directed by ${director}?`,
+          options: ["Yes", "No"],
+          answer: "Yes"
+        },
+        {
+          question: `Is "${data.title}" popular on TMDb?`,
+          options: ["Yes", "No"],
+          answer: data.popularity > 100 ? "Yes" : "No"
+        }
+      ];
+
+      quizQuestions = challengeQuestions;
+      currentQuestion = 0;
+      scores = {};
+      renderQuestion();
+
+      fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: targetUser,
+          text: `🎯 You've been challenged by ${user.first_name} to a quiz about "${data.title}"! Open the app to compete.`
+        })
+      });
+
+      alert("Challenge sent!");
+    }
+
+    fetchGenres();
+    loadMovies();
+    async function alertUpcomingMovies() {
+  const releases = [
+    { title: "Jurassic World: Rebirth", date: "July 2, 2025" },
+    { title: "Superman: Legacy", date: "July 11, 2025" },
+    { title: "Eddington", date: "July 18, 2025" },
+    { title: "Fantastic Four: First Steps", date: "July 25, 2025" },
+    { title: "Freakier Friday", date: "August 8, 2025" },
+    { title: "Tron: Ares", date: "October 10, 2025" },
+    { title: "Black Phone 2", date: "October 17, 2025" },
+    { title: "Regretting You", date: "October 24, 2025" },
+    { title: "The Running Man", date: "November 7, 2025" },
+    { title: "Predator: Badlands", date: "November 7, 2025" },
+    { title: "Now You See Me Now You Don’t", date: "November 14, 2025" },
+    { title: "Wicked: For Good", date: "November 21, 2025" },
+    { title: "Zootopia 2", date: "November 26, 2025" },
+    { title: "Avatar: Fire and Ash", date: "December 19, 2025" }
+  ];
+
+  let message = "🎥 Upcoming Movie Releases in 2025:\n\n";
+  releases.forEach(movie => {
+    message += `• ${movie.title} – ${movie.date}\n`;
+  });
+
+  alert(message);
+}
+
+  </script>
+  <!-- Ad Trigger Buttons -->
+<button onclick="showRewardedInterstitial()">Watch Ad for Reward</button>
+<button onclick="showRewardedPopup()">Watch Popup Ad</button>
+<button onclick="setupInAppInterstitial()">Start In-App Ads</button>
+
+<script>
+  // Rewarded Interstitial
+  function showRewardedInterstitial() {
+    show_9596591().then(() => {
+      alert('You have seen an ad!');
+      // Add your reward logic here
+    });
+  }
+
+  // Rewarded Popup
+  function showRewardedPopup() {
+    show_9596591('pop').then(() => {
+      // Reward user for popup ad
+      console.log('Popup ad completed');
+    }).catch(e => {
+      console.warn('Popup ad error:', e);
+    });
+  }
+
+  // In-App Interstitial
+  function setupInAppInterstitial() {
+    show_9596591({
+      type: 'inApp',
+      inAppSettings: {
+        frequency: 2,
+        capping: 0.1,
+        interval: 30,
+        timeout: 5,
+        everyPage: false
+      }
+    });
+  }
+  function hideLaunchAd() {
+  document.getElementById("launch-ad").style.display = "none";
+}
+
+// Auto-hide after 5 seconds
+setTimeout(hideLaunchAd, 5000);
+
+</script>
+
+</body>
+</html>
+
+ 
+
+
+
+
+
+ 
+
